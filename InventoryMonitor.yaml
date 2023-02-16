@@ -1,0 +1,121 @@
+---
+  - hosts: all
+    gather_facts: True
+    gather_subset: min
+    tasks:
+     - raw: "$flag=0; $disk = Get-WmiObject Win32_LogicalDisk | Select-Object FreeSpace, DriveType; foreach ($element in $disk) {if ($element.DriveType -eq 3) {if ($element.FreeSpace -lt 1000000000) { $flag=1 }}};$flag"
+       register: outspace
+       when: ansible_os_family == "Windows"
+     - raw: "$f=0; $d=Get-WmiObject Win32_OperatingSystem | Select-Object FreePhysicalMemory; if ($d.FreePhysicalMemory -lt 1000000) {$f=1}; $f"
+       register: outfree
+       when: ansible_os_family == "Windows"
+     - raw: $flag=0; $CPUAveragePerformance = (GET-COUNTER -Counter "\Processor(_Total)\% Processor Time" -SampleInterval 5 -MaxSamples 18 |select -ExpandProperty countersamples | select -ExpandProperty cookedvalue | Measure-Object -Average).average; if ($CPUAveragePerformance -gt 85) {$flag=1};$flag;
+       register: outcpu
+       when: ansible_os_family == "Windows"
+     - shell: "r=0;for n in `df --output=size,avail -h -B G /d00 / /var | sort -k1 -h | awk '{print $2}' | tail -n +2 | xargs | tr -d 'G'`; do if [[ n -eq 1 ]]; then r=1; fi; done; echo $r"
+       register: linspace
+       when: ansible_os_family == "RedHat"
+     - shell: "echo $(free -m | awk '{print $7}' | xargs)"
+       register: linfree
+       when: ansible_os_family == "RedHat"
+     - shell: "echo $(sar -u 90 1 | tail -n 1 | awk '{print $3}' | xargs)"
+       register: lincpu
+       when: ansible_os_family == "RedHat" 
+     - shell: echo ${node.hostname} >> ~/alert_freespaceorfreemem
+       delegate_to: localhost
+       when: 
+         - ansible_os_family == "Windows"
+         - outfree.stdout == "1\r\n" or outspace.stdout == "1\r\n" or outcpu.stdout == "1\r\n"
+       ignore_errors: True
+     - shell: echo ${node.hostname} >> ~/alert_freespaceorfreemem
+       delegate_to: localhost
+       when:
+         - ansible_os_family == "RedHat"
+         - lincpu.stdout | int > 85 or linfree.stdout | int < 10 or linspace.stdout | int == 1
+---
+  - hosts: all
+    gather_facts: False
+    tasks:
+    -  script: /var/lib/rundeck/inventory_noofnodes
+       delegate_to: localhost
+    -  script: /var/lib/rundeck/inventory_maintenance.sh
+#       args:
+#         chdir: /var/lib/rundeck/
+       delegate_to: localhost
+    -  stat: path=/var/lib/rundeck/tempfile
+       register: p
+       delegate_to: localhost
+    -  stat: path=/var/lib/rundeck/alert_freespaceorfreemem
+       register: x
+       delegate_to: localhost
+#    -  debug: msg="value of p"
+#       delegate_to: localhost
+    -  mail:
+        host: int-mail.ptc.com
+        from: internal-inv-monitor-lazy-mailer-alert@xyz.com
+        subject: Currently Total VMs This Utility Is Monitoring - {{ lookup("file", "/var/lib/rundeck/noofnodes", errors="ignore") }} 
+        subtype: html
+        body: '
+
+<h1>Following VMs spacebar separated currently either out of reach or down 
+- {{ lookup("file", "/var/lib/rundeck/tempfile", errors="ignore") }}</h1>
+<img src="https://thumbs.dreamstime.com/b/doodle-style-air-horn-illustration-vector-format-29762599.jpg" alt="add sender to safe sender list"  width="100" height="150">
+<img src="https://media.24ways.org/2010/annett/pc-crash.png" alt="add sender to safe sender list" width="100" height="150">
+
+<p><i> In-house monitoring tool developed on Ansible; features - stateless; mail triggers on alert only; monitors VMs CPU, drive-space, available memory; health-check Mon-Sun 0800 IST; please fix issues as per VM ownership </i></p> 
+'
+        to: ${option.email}
+       delegate_to: localhost
+       when: p.stat.exists == true and x.stat.exists == false
+       check_mode: yes
+    -  mail:
+        host: int-mail.ptc.com
+        from: internal-inv-monitor-lazy-mailer-alert@ptc.com
+        subject: Currently Total VMs This Utility Is Monitoring - {{ lookup("file", "/var/lib/rundeck/noofnodes", errors="ignore") }} 
+        subtype: html
+        body: '
+
+<h1>Following VMs spacebar separated currently either low <1GB on drive-space or low <1GB on available memory or having high >85% CPU load
+- {{ lookup("file", "/var/lib/rundeck/alert_freespaceorfreemem", errors="ignore") }}</h1>
+<img src="https://thumbs.dreamstime.com/b/doodle-style-air-horn-illustration-vector-format-29762599.jpg" alt="add sender to safe sender list"  width="100" height="150">
+<img src="https://media.24ways.org/2010/annett/pc-crash.png" alt="add sender to safe sender list" width="100" height="150">
+
+<p><i> In-house monitoring tool developed on Ansible; features - stateless; mail triggers on alert only; monitors VMs CPU, drive-space, available memory; health-check Mon-Sun 0800 IST; please fix issues as per VM ownership </i></p> 
+'
+        to: ${option.email}
+       delegate_to: localhost
+       when: x.stat.exists == true
+#       when: p.stat.exists == false and x.stat.exists == true
+
+    -  mail:
+        host: int-mail.ptc.com
+        from: internal-inv-monitor-lazy-mailer-alert@ptc.com
+        subject: Currently Total VMs This Utility Is Monitoring - {{ lookup("file", "/var/lib/rundeck/noofnodes", errors="ignore") }} 
+        subtype: html
+        body: '
+
+<h1>Following VMs spacebar separated currently either out of reach or down 
+- {{ lookup("file", "/var/lib/rundeck/tempfile", errors="ignore") }}</h1>
+<img src="https://thumbs.dreamstime.com/b/doodle-style-air-horn-illustration-vector-format-29762599.jpg" alt="add sender to safe sender list"  width="100" height="150">
+<img src="https://media.24ways.org/2010/annett/pc-crash.png" alt="add sender to safe sender list" width="100" height="150">
+
+<h1>Following VMs spacebar separated currently either low [<1GB] on drive-space [atleast 1] or available memory
+- {{ lookup("file", "/var/lib/rundeck/alert_freespaceorfreemem", errors="ignore") }}</h1>
+<img src="https://thumbs.dreamstime.com/b/doodle-style-air-horn-illustration-vector-format-29762599.jpg" alt="add sender to safe sender list"  width="100" height="150">
+<img src="https://media.24ways.org/2010/annett/pc-crash.png" alt="add sender to safe sender list" width="100" height="150">
+
+<p><i>  In-house monitoring tool developed on Ansible; features - stateless; mail triggers on alert only; monitors VMs CPU, drive-space, available memory; health-check Mon-Sun 0800 IST; please fix issues as per VM ownership  </i></p> 
+'
+        to: ${option.email}
+       delegate_to: localhost
+       when: p.stat.exists == true and x.stat.exists == true
+       check_mode: yes
+    -  file:
+         path: /var/lib/rundeck/tempfile
+         state: absent
+       delegate_to: localhost  
+    -  file:
+         path: /var/lib/rundeck/alert_freespaceorfreemem
+         state: absent
+       delegate_to: localhost  
+

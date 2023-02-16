@@ -70,7 +70,7 @@
        check_mode: yes
     -  mail:
         host: int-mail.ptc.com
-        from: internal-inv-monitor-lazy-mailer-alert@ptc.com
+        from: internal-inv-monitor-lazy-mailer-alert@xyz.com
         subject: Currently Total VMs This Utility Is Monitoring - {{ lookup("file", "/var/lib/rundeck/noofnodes", errors="ignore") }} 
         subtype: html
         body: '
@@ -89,7 +89,7 @@
 
     -  mail:
         host: int-mail.ptc.com
-        from: internal-inv-monitor-lazy-mailer-alert@ptc.com
+        from: internal-inv-monitor-lazy-mailer-alert@xyz.com
         subject: Currently Total VMs This Utility Is Monitoring - {{ lookup("file", "/var/lib/rundeck/noofnodes", errors="ignore") }} 
         subtype: html
         body: '

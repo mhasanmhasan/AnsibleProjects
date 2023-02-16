@@ -1,0 +1,73 @@
+---
+  - hosts: all
+    gather_facts: True
+    tasks:
+    -  win_command: 'net stop msdtc'
+       ignore_errors: true
+    -  win_command: 'net stop OracleService${option.sid}'
+       ignore_errors: true
+    -  win_command: 'lsnrctl stop'
+       ignore_errors: true
+    -  win_command: 'net stop OracleVssWriter${option.sid}'
+       ignore_errors: True
+    -  win_command: 'SQLPLUS / AS SYSDBA'
+       args:
+        stdin: SHUTDOWN IMMEDIATE
+       ignore_errors: true
+#       register: result
+#    -  debug: msg="{{result}}"
+    -  win_shell: "Rename-Item {{ ansible_env.ORACLE_HOME }}\\OPatch {{ ansible_env.ORACLE_HOME }}\\OPatch_{{ ansible_date_time.iso8601_basic_short }}"
+       register: ren
+       failed_when: ren.rc != 0
+    -  win_copy:
+        src: ${option.Install_path}\${option.OPatch}.zip
+        dest: "{{ ansible_env.USERPROFILE }}\\"
+        remote_src: True
+       become: True
+       become_method: runas
+       become_flags: logon_type=new_credentials logon_flags=netcredentials_only
+       vars:
+        ansible_become_user: <>
+        ansible_become_pass: "{{ <> }}"
+    -  win_unzip:
+         src: "{{ ansible_env.USERPROFILE }}\\${option.OPatch}.zip"
+         dest: "{{ ansible_env.ORACLE_HOME }}\\"
+    -  win_copy:
+        src: ${option.Install_path}\${option.Datapatch}.zip
+        dest: "{{ ansible_env.USERPROFILE }}\\"
+        remote_src: True
+       become: True
+       become_method: runas
+       become_flags: logon_type=new_credentials logon_flags=netcredentials_only
+       vars:
+        ansible_become_user: <>
+        ansible_become_pass: "{{ <> }}"
+    -  win_unzip:
+         src: "{{ ansible_env.USERPROFILE }}\\${option.Datapatch}.zip"
+         dest: "{{ ansible_env.USERPROFILE }}\\Patch"
+    -  win_command: 'cmd.exe /c "{{ ansible_env.ORACLE_HOME }}\\OPatch\\opatch apply {{ ansible_env.USERPROFILE }}\\Patch\\${option.patchnumber} -silent -verbose"'
+       register: result
+    -  debug: msg="{{result}}"
+    -  win_command: 'net start OracleService${option.sid}'
+       ignore_errors: true
+    -  win_command: 'lsnrctl start'
+       ignore_errors: true
+#       register: result
+#    -  debug: msg="{{result}}"
+    -  win_command: 'SQLPLUS / AS SYSDBA'
+       args:
+        stdin: STARTUP
+       ignore_errors: true
+    -  win_command: 'net start OracleVssWriter${option.sid}'
+       ignore_errors: True
+    -  win_command: 'net start msdtc'
+       ignore_errors: true
+#       register: result
+#    -  debug: msg="{{result}}"
+    -  win_command: 'cmd.exe /c "{{ ansible_env.ORACLE_HOME }}\\OPatch\\opatch lsinventory"'
+       register: result
+    -  debug: msg="{{result}}"
+    -  win_command: 'cmd.exe /c "{{ ansible_env.ORACLE_HOME }}\\OPatch\\datapatch -verbose"'
+       register: result
+    -  debug: msg="{{result}}"
+
